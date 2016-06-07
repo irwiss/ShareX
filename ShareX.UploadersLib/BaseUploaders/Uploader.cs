@@ -73,6 +73,8 @@ namespace ShareX.UploadersLib
             ServicePointManager.DefaultConnectionLimit = 25;
             ServicePointManager.Expect100Continue = false;
             ServicePointManager.UseNagleAlgorithm = false;
+
+            TryEnableTls12();
         }
 
         protected void OnProgressChanged(ProgressManager progress)
@@ -682,6 +684,29 @@ namespace ShareX.UploadersLib
             }
 
             return response;
+        }
+
+        /// <summary>Enable TLS1.2 for .NET 4.0 app if .NET 4.5 is installed.</summary>
+        /// <seealso cref="http://stackoverflow.com/questions/28286086/default-securityprotocol-in-net-4-5"/>
+        /// <returns>True if .NET 4.0 is installed and we enabled the protocol on SevicePointManager.</returns>
+        public static bool TryEnableTls12()
+        {
+            // detect .NET 4.5 or greater https://msdn.microsoft.com/en-us/library/hh925568
+            using (var rk = Microsoft.Win32.RegistryKey
+                .OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry32)
+                .OpenSubKey("SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full\\"))
+            {
+                const int DotNet45Release = 378389;
+
+                if (rk != null && rk.GetValue("Release") != null && (int)rk.GetValue("Release") >= DotNet45Release)
+                {
+                    const SecurityProtocolType Tls12 = (SecurityProtocolType)3072;
+                    ServicePointManager.SecurityProtocol |= Tls12;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         #endregion Helper methods
