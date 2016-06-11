@@ -152,9 +152,6 @@ namespace ShareX.ScreenCaptureLib
             }
         }
 
-        public Point CurrentPosition { get; private set; }
-        public Point PositionOnClick { get; private set; }
-
         public ResizeManager ResizeManager { get; private set; }
         public bool IsCreating { get; private set; }
         public bool IsMoving { get; private set; }
@@ -168,6 +165,7 @@ namespace ShareX.ScreenCaptureLib
         }
 
         public bool IsProportionalResizing { get; private set; }
+        public bool IsCornerMoving { get; private set; }
         public bool IsSnapResizing { get; private set; }
 
         public List<SimpleWindowInfo> Windows { get; set; }
@@ -201,6 +199,7 @@ namespace ShareX.ScreenCaptureLib
 
             ResizeManager = new ResizeManager(form, this);
 
+            form.LostFocus += form_LostFocus;
             form.MouseDown += form_MouseDown;
             form.MouseUp += form_MouseUp;
             form.MouseDoubleClick += form_MouseDoubleClick;
@@ -777,6 +776,11 @@ namespace ShareX.ScreenCaptureLib
             tsmiHighlightColor.Visible = shapeType == ShapeType.DrawingHighlight;
         }
 
+        private void form_LostFocus(object sender, EventArgs e)
+        {
+            IsProportionalResizing = IsCornerMoving = IsSnapResizing = false;
+        }
+
         private void form_MouseDown(object sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left)
@@ -832,10 +836,8 @@ namespace ShareX.ScreenCaptureLib
                 {
                     form.Close(RegionResult.Region);
                 }
-                else if (CurrentShape != null)
+                else if (CurrentShape != null && !IsCreating)
                 {
-                    EndRegionSelection();
-
                     CurrentShape.OnShapeDoubleClicked();
                 }
             }
@@ -892,6 +894,9 @@ namespace ShareX.ScreenCaptureLib
                 case Keys.ShiftKey:
                     IsProportionalResizing = true;
                     break;
+                case Keys.ControlKey:
+                    IsCornerMoving = true;
+                    break;
                 case Keys.Menu:
                     IsSnapResizing = true;
                     break;
@@ -942,6 +947,9 @@ namespace ShareX.ScreenCaptureLib
                 case Keys.ShiftKey:
                     IsProportionalResizing = false;
                     break;
+                case Keys.ControlKey:
+                    IsCornerMoving = false;
+                    break;
                 case Keys.Menu:
                     IsSnapResizing = false;
                     break;
@@ -968,28 +976,29 @@ namespace ShareX.ScreenCaptureLib
                 }
                 else if (IsCreating && !CurrentRectangle.IsEmpty)
                 {
-                    CurrentPosition = InputManager.MousePosition0Based;
-
-                    Point newPosition = CurrentPosition;
+                    Point currentPosition = InputManager.MousePosition0Based;
 
                     if (IsProportionalResizing)
                     {
                         if (shape.NodeType == NodeType.Rectangle)
                         {
-                            newPosition = CaptureHelpers.SnapPositionToDegree(PositionOnClick, CurrentPosition, 90, 45);
+                            currentPosition = CaptureHelpers.SnapPositionToDegree(shape.StartPosition, currentPosition, 90, 45);
                         }
                         else if (shape.NodeType == NodeType.Line)
                         {
-                            newPosition = CaptureHelpers.SnapPositionToDegree(PositionOnClick, CurrentPosition, 45, 0);
+                            currentPosition = CaptureHelpers.SnapPositionToDegree(shape.StartPosition, currentPosition, 45, 0);
                         }
                     }
-
-                    if (IsSnapResizing)
+                    else if (IsCornerMoving)
                     {
-                        newPosition = SnapPosition(PositionOnClick, newPosition);
+                        shape.StartPosition = shape.StartPosition.Add(InputManager.MouseVelocity.X, InputManager.MouseVelocity.Y);
+                    }
+                    else if (IsSnapResizing)
+                    {
+                        currentPosition = SnapPosition(shape.StartPosition, currentPosition);
                     }
 
-                    shape.EndPosition = newPosition;
+                    shape.EndPosition = currentPosition;
                 }
             }
 
@@ -1004,8 +1013,6 @@ namespace ShareX.ScreenCaptureLib
             {
                 return;
             }
-
-            PositionOnClick = position;
 
             BaseShape shape = GetShapeIntersect();
 
@@ -1050,7 +1057,7 @@ namespace ShareX.ScreenCaptureLib
 
             if (shape != null)
             {
-                if (!IsCurrentRectangleValid)
+                if (!shape.IsValidShape)
                 {
                     shape.Rectangle = Rectangle.Empty;
 
@@ -1063,6 +1070,7 @@ namespace ShareX.ScreenCaptureLib
                     else
                     {
                         DeleteCurrentShape();
+                        shape = null;
                     }
                 }
 
